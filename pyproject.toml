@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ovo_proteindj"
+version = "0.0.1"
+description = "OVO plugin for ProteinDJ end-to-end RFdiffusion pipeline"
+authors = [
+  { name="David Prihoda", email="david.prihoda@msd.com" }
+]
+dependencies = [
+  "streamlit"
+]
+
+[project.entry-points."ovo.plugins"]
+plugin = "ovo_proteindj:plugin"
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.package-data]
+"*" = ["*"]

@@ -1,0 +1,39 @@
+ Name                       Version      License                              
+ GitPython                  3.1.45       BSD-3-Clause                         
+ Jinja2                     3.1.6        BSD License                          
+ MarkupSafe                 3.0.3        BSD-3-Clause                         
+ altair                     5.5.0        BSD License                          
+ attrs                      25.4.0       MIT                                  
+ blinker                    1.9.0        MIT License                          
+ cachetools                 6.2.1        MIT License                          
+ certifi                    2025.10.5    Mozilla Public License 2.0 (MPL 2.0) 
+ charset-normalizer         3.4.4        MIT                                  
+ click                      8.3.0        BSD-3-Clause                         
+ gitdb                      4.0.12       BSD License                          
+ idna                       3.11         BSD-3-Clause                         
+ jsonschema                 4.25.1       MIT                                  
+ jsonschema-specifications  2025.9.1     MIT                                  
+ narwhals                   2.10.2       MIT License                          
+ numpy                      2.3.4        BSD License                          
+ packaging                  25.0         Apache Software License; BSD License 
+ pandas                     2.3.3        BSD License                          
+ pillow                     12.0.0       MIT-CMU                              
+ protobuf                   6.33.0       3-Clause BSD License                 
+ pyarrow                    21.0.0       Apache Software License              
+ pydeck                     0.9.1        Apache License 2.0                   
+ python-dateutil            2.9.0.post0  Apache Software License; BSD License 
+ pytz                       2025.2       MIT License                          
+ referencing                0.37.0       MIT                                  
+ requests                   2.32.5       Apache Software License              
+ rpds-py                    0.28.0       MIT                                  
+ six                        1.17.0       MIT License                          
+ smmap                      5.0.2        BSD License                          
+ streamlit                  1.51.0       Apache Software License              
+ tenacity                   9.1.2        Apache Software License              
+ toml                       0.10.2       MIT License                          
+ tornado                    6.5.2        Apache Software License              
+ typing_extensions          4.15.0       PSF-2.0                              
+ tzdata                     2025.2       Apache Software License              
+ urllib3                    2.5.0        MIT                                  
+ nextflow                   25.10.0      Apache Software License
+ proteindj                  1.0          MIT
