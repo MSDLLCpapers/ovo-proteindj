@@ -20,7 +20,7 @@ from ovo.core.utils.formatting import get_hashed_path_for_bytes
 from ovo.core.utils.residue_selection import from_contig_to_residues, from_residues_to_chain_breaks, \
     get_chains_and_contigs, from_residues_to_segments
 
-from ovo_proteindj.models import ProteinDJBinderDeNovoDesignWorkflow
+from ovo_proteindj.models_proteindj import ProteinDJBinderDeNovoDesignWorkflow
 
 
 @st.fragment
@@ -28,7 +28,7 @@ def intro_step():
     # Initialize the workflow object in session state
     initialize_workflow(__file__, ProteinDJBinderDeNovoDesignWorkflow.name)
 
-    if not config.licenses.pyrosetta:
+    if not config.props.pyrosetta_license:
         return st.error("This workflow requires a PyRosetta license which is not enabled in this OVO instance. Please contact the administrator.")
 
     with st.container(width=850):
@@ -300,17 +300,17 @@ def preview_step():
 
     # Generate preview
     st.write("#### Generate preview")
-    num_iterations = 15
+    num_timesteps = 15
     with st.columns([2, 1])[0]:
         st.write(f"""
-        Generate a quick RFdiffusion preview of the design with reduced number of iterations 
-        ({num_iterations}/50) to verify your inputs. This step is optional.
+        Generate a quick RFdiffusion preview of the design with reduced number of timesteps 
+        ({num_timesteps}/50) to verify your inputs. This step is optional.
 
         This should take 2-10 minutes depending on the length of the target and binder.
         """)
 
     if st.button(":material/wand_stars: Generate preview"):
-        workflow.preview_job_id = submit_rfdiffusion_preview(workflow, iterations=num_iterations)
+        workflow.preview_job_id = submit_rfdiffusion_preview(workflow, timesteps=num_timesteps)
 
     # Check if needed parameters are set
     if not workflow.preview_job_id:

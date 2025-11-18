@@ -2,10 +2,7 @@ import streamlit as st
 
 from ovo import (
     local_scheduler,
-    RFdiffusionWorkflow,
     storage,
-    WorkflowTypes,
-    MODEL_WEIGHTS_SCAFFOLD,
     config,
 )
 from ovo.app.components import molstar_custom_component, StructureVisualization
@@ -17,23 +14,22 @@ from ovo.app.components.preview_components import visualize_rfdiffusion_preview,
 from ovo.app.components.scheduler_components import wait_with_statusbar
 from ovo.app.components.submission_components import (
     pool_submission_inputs,
-    show_rfdiffusion_advanced_settings,
     review_workflow_submission,
 )
-from ovo.app.pages import jobs_page, designs_page
 from ovo.app.pages.rfdiffusion.binder_diversification import initialize_workflow
 from ovo.app.utils.page_init import initialize_page
-from ovo.core.auth import get_username
-from ovo.core.database import descriptors
 from ovo.core.logic.design_logic_rfdiffusion import submit_rfdiffusion_preview
 from ovo.core.utils.formatting import get_hashed_path_for_bytes
-from ovo_proteindj.models import ProteinDJMonomerMotifScaffDesignWorkflow
+from ovo_proteindj.models_proteindj import ProteinDJMonomerMotifScaffDesignWorkflow
 
 
 @st.fragment
 def intro_step():
     # Initialize the workflow object in session state
     initialize_workflow(__file__, ProteinDJMonomerMotifScaffDesignWorkflow.name)
+
+    if not config.props.pyrosetta_license:
+        return st.error("This workflow requires a PyRosetta license which is not enabled in this OVO instance. Please contact the administrator.")
 
     with st.container(width=850):
         st.markdown(
@@ -135,30 +131,30 @@ def contig_preview_step():
     help_column = st.columns([2, 1])[0]
 
     with st.columns(3)[0]:
-        if "preview_iterations" not in st.session_state:
-            st.session_state.preview_iterations = 5
-        new_iterations = st.slider(
-            "Num RFdiffusion iterations (T)",
+        if "preview_timesteps" not in st.session_state:
+            st.session_state.preview_timesteps = 5
+        new_timesteps = st.slider(
+            "Num RFdiffusion timesteps (T)",
             min_value=1,
             max_value=20,
-            value=st.session_state.preview_iterations,
-            key="iterations_input",
+            value=st.session_state.preview_timesteps,
+            key="timesteps_input",
         )
-        if new_iterations and new_iterations != st.session_state.preview_iterations:
-            st.session_state.preview_iterations = new_iterations
+        if new_timesteps and new_timesteps != st.session_state.preview_timesteps:
+            st.session_state.preview_timesteps = new_timesteps
             # Clear previous preview if settings changed
             workflow.preview_job_id = None
 
     with help_column:
         st.write(f"""
-        Generate a quick RFdiffusion preview of the design with reduced number of iterations
-        ({st.session_state.preview_iterations}/50) to verify your inputs. This step is optional.
+        Generate a quick RFdiffusion preview of the design with reduced number of timesteps
+        ({st.session_state.preview_timesteps}/50) to verify your inputs. This step is optional.
 
         This should take from 30 seconds to a few minutes depending on the length of the protein.
         """)
 
     if st.button(":material/wand_stars: Generate preview"):
-        workflow.preview_job_id = submit_rfdiffusion_preview(workflow, iterations=st.session_state.preview_iterations)
+        workflow.preview_job_id = submit_rfdiffusion_preview(workflow, timesteps=st.session_state.preview_timesteps)
 
     # Check if needed parameters are set
     if not workflow.preview_job_id:

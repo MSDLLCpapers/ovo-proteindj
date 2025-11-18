@@ -17,28 +17,12 @@ from ovo import (
 from ovo.core.database import descriptors
 
 from ovo.core.database.models import Pool, Round, DesignJob, DesignSpec, DescriptorValue
-from ovo.core.logic.descriptor_logic import save_descriptor_job_for_design_job
+from ovo.core.logic.descriptor_logic import save_descriptor_job_for_design_job, read_descriptor_file_values, \
+    generate_descriptor_values_for_design
 from ovo.core.logic.design_logic import set_designs_accepted
-from ovo.core.scheduler.base_scheduler import Scheduler
 
-from ovo_proteindj.models import ProteinDJDesignWorkflow
-
-
-def submit_workflow(workflow: ProteinDJDesignWorkflow, scheduler: Scheduler, pipeline_name: str = None):
-    workflow.validate()
-
-    # TODO workflow input files should be prepared automatically by the scheduler in the future
-    params = workflow.params.to_dict()
-    params["rfd_input_pdb"] = storage.prepare_workflow_input(params["rfd_input_pdb"], scheduler.workdir)
-
-    job_id = scheduler.submit(
-        pipeline_name=pipeline_name or "https://github.com/PapenfussLab/proteindj@v1.0.0",
-        params=params,
-        # TODO do we need to pass -profile binder_denovo to set default values,
-        #  or will we set all default values on our end?
-    )
-
-    return job_id
+from ovo_proteindj.models_proteindj import ProteinDJDesignWorkflow
+from ovo_proteindj import descriptors_proteindj
 
 
 def process_workflow_results(job: DesignJob, callback: Callable = None):
@@ -149,32 +133,70 @@ def process_proteindj_design(
         id=design_id,
         pool_id=pool_id,
         accepted=False,
-        rfdiffusion_backbone_pdb_path=storage.store_file_path(
-            source_abs_path=f"{tmpdir}/{rfd_dir}_results/{backbone_filename}.pdb",
-            storage_rel_path=f"{destination_dir}/rfdiffusion/{backbone_id}_backbone.pdb",
-            overwrite=False,
-        ),
-        rfdiffusion_backbone_trb_path=storage.store_file_bytes(
-            file_bytes=pickle.dumps(rfd_json),
-            storage_rel_path=f"{destination_dir}/rfdiffusion/{backbone_id}_backbone.trb",
-            overwrite=False,
-        ),
-        protein_mpnn_pdb_path=storage.store_file_path(
-            source_abs_path=f"{tmpdir}/{seq_dir}_results/{backbone_filename}_seq_{idx_sequence}.pdb",
-            storage_rel_path=f"{destination_dir}/mpnn/{design_id}.pdb",
-            overwrite=False,
-        ),
-        alphafold2_initial_guess_pdb_path=storage.store_file_path(
-            source_abs_path=f"{tmpdir}/{pred_dir}_results/{backbone_filename}_seq_{idx_sequence}_af2pred.pdb",
-            storage_rel_path=f"{destination_dir}/alphafold_initial_guess/{design_id}_af2pred.pdb",
-            overwrite=False,
-        )
     )
-    design.structure_path = design.protein_mpnn_pdb_path
+    rfdiffusion_backbone_pdb_path = storage.store_file_path(
+        source_abs_path=f"{tmpdir}/{rfd_dir}_results/{backbone_filename}.pdb",
+        storage_rel_path=f"{destination_dir}/rfdiffusion/{backbone_id}_backbone.pdb",
+        overwrite=False,
+    )
+    rfdiffusion_backbone_trb_path = storage.store_file_bytes(
+        file_bytes=pickle.dumps(rfd_json),
+        storage_rel_path=f"{destination_dir}/rfdiffusion/{backbone_id}_backbone.trb",
+        overwrite=False,
+    )
+    #
+    # TODO handle FAMPNN prediction
+    #
+    sequence_design_descriptor = descriptors_proteindj.PROTEINDJ_PROTEIN_MPNN_STRUCTURE_PATH
+    sequence_design_pdb_path = storage.store_file_path(
+        source_abs_path=f"{tmpdir}/{seq_dir}_results/{backbone_filename}_seq_{idx_sequence}.pdb",
+        storage_rel_path=f"{destination_dir}/mpnn/{design_id}.pdb",
+        overwrite=False,
+    )
+    #
+    # TODO handle Boltz prediction
+    #
+    structure_prediction_descriptor = descriptors_proteindj.PROTEINDJ_AF2_STRUCTURE_PATH
+    structure_prediction_pdb_path = storage.store_file_path(
+        source_abs_path=f"{tmpdir}/{pred_dir}_results/{backbone_filename}_seq_{idx_sequence}_af2pred.pdb",
+        storage_rel_path=f"{destination_dir}/alphafold_initial_guess/{design_id}_af2pred.pdb",
+        overwrite=False,
+    )
+    shared_args = dict(
+        design_id=design.id,
+        descriptor_job_id=None,
+        chains="A",
+    )
+    descriptor_values = [
+        DescriptorValue(
+            descriptor_key=descriptors_proteindj.RFDIFFUSION_STRUCTURE_PATH.key,
+            value=rfdiffusion_backbone_pdb_path,
+            **shared_args,
+        ),
+        DescriptorValue(
+            descriptor_key=descriptors_proteindj.RFDIFFUSION_TRB_PATH.key,
+            value=rfdiffusion_backbone_trb_path,
+            **shared_args,
+        ),
+        DescriptorValue(
+            descriptor_key=sequence_design_descriptor.key,
+            value=sequence_design_pdb_path,
+            **shared_args,
+        ),
+        DescriptorValue(
+            descriptor_key=structure_prediction_descriptor.key,
+            value=structure_prediction_pdb_path,
+            **shared_args,
+        ),
+    ]
+    design.structure_path = sequence_design_pdb_path
+    # TODO handle multiple chains
     chain_ids = ["A"]
     design.spec = DesignSpec.from_pdb_str(
         pdb_data=storage.read_file_str(design.structure_path), chains=chain_ids
     )
+    # TODO populate each spec.chains[...].contig from RFD json or row.rfd_sampled_mask,
+    #  make sure they are in the correct order as the chains in the PDB!
 
     # Sanity check - make sure sequences in CSV match those in PDB
     if ":" in row.sequence:
@@ -185,84 +207,22 @@ def process_proteindj_design(
     assert spec_sequences == str(row.sequence), \
         f"Unexpected mismatch between sequence in PDB and CSV for design {design.id}: {spec_sequences} != {row.sequence}"
 
-    #
-    # TODO should we share descriptors or rather create new ones?
-    #
-    mapping = {
-        # Unique Identifiers
-        "description": None,
-        "fold_id": None,
-        "seq_id": None,
-
-        # RFdiffusion Metrics
-        "rfd_sampled_mask": None,
-        "rfd_helices": None,
-        "rfd_strands": None,
-        "rfd_total_ss": None,
-        "rfd_RoG": descriptors.RADIUS_OF_GYRATION.key,
-        "rfd_time": None,
-
-        # Sequence Generation Metrics
-        "fampnn_avg_psce": None,
-        "mpnn_score": None,
-
-        # Structure Prediction Metrics
-        "af2_pae_interaction": descriptors.AF2_BINDER_INTERFACE_PAE.key, # TODO rename to binder_interaction_pae
-        "af2_pae_overall": descriptors.AF2_PAE.key,
-        "af2_pae_binder": descriptors.AF2_BINDER_PAE.key,
-        "af2_pae_target": None,
-        "af2_plddt_overall": descriptors.AF2_PLDDT.key,
-        "af2_plddt_binder": descriptors.AF2_PLDDT_BINDER.key,
-        "af2_plddt_target": None,
-        "af2_rmsd_overall": descriptors.AF2_DESIGN_RMSD.key,
-        "af2_rmsd_binder_bndaln": None,
-        "af2_rmsd_binder_tgtaln": descriptors.AF2_TARGET_ALIGNED_BINDER_RMSD.key,
-        "af2_rmsd_target": None,
-        "af2_time": None,
-
-        "boltz_overall_rmsd": None, # TODO add boltz metrics
-        "boltz_binder_rmsd": None,
-        "boltz_target_rmsd": None,
-        "boltz_conf_score": None,
-        "boltz_ptm": None,
-        "boltz_ptm_interface": None,
-        "boltz_plddt": None,
-        "boltz_plddt_interface": None,
-        "boltz_pde": None,
-        "boltz_pde_interface": None,
-
-        # Biophysical Analysis Metrics
-        "pr_helices": None,
-        "pr_strands": None,
-        "pr_total_ss": None,
-        "pr_RoG": None,
-        "pr_intface_BSA": None,
-        "pr_intface_shpcomp": None,
-        "pr_intface_hbonds": None,
-        "pr_intface_deltaG": descriptors.PYROSETTA_DDG.key,
-        "pr_intface_packstat": None,
-        "pr_TEM": None,
-        "pr_surfhphobics_%": None,
-
-        # Sequence Analysis Metrics
-        "seq_ext_coef": None,
-        "seq_length": descriptors.LENGTH.key,
-        "seq_MW": descriptors.MOLECULEAR_WEIGHT.key,
-        "seq_pI": descriptors.ISOELECTRIC_POINT.key,
-    }
-
-    descriptor_values = []
-    for column, value in row.items():
-        if column in mapping and mapping[column]:
-            assert isinstance(mapping[column], str), f"Expected descriptor key, got {type(mapping[column])}: {mapping[column]}"
-            descriptor_values.append(
-                DescriptorValue(
-                    design_id=design.id,
-                    descriptor_key=mapping[column],
-                    descriptor_job_id=None, # will be set later
-                    chains=",".join(chain_ids),
-                    value=str(value) if pd.notna(value) else None,
-                )
-            )
+    df = pd.DataFrame([row.rename(design_id)])
+    descriptor_values.extend(
+        generate_descriptor_values_for_design(
+            design_id=design_id,
+            table_ids=design_id,
+            descriptor_job_id=None, # will be set later
+            descriptor_tables={
+                "proteindj|rfd": df,
+                "proteindj|mpnn": df,
+                "proteindj|af2": df,
+                #"proteindj|boltz": df,
+                "proteindj|pr": df,
+                "proteindj|seq": df,
+            },
+            chains=chain_ids,
+        )
+    )
 
     return design, descriptor_values

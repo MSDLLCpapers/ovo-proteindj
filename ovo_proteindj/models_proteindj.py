@@ -4,7 +4,6 @@ from dataclasses import dataclass, field
 from typing import Callable, Literal
 
 from ovo import config, DesignWorkflow, WorkflowTypes, WorkflowParams
-from ovo.core.scheduler import Scheduler
 from ovo.core.utils.residue_selection import from_segments_to_hotspots, from_hotspots_to_segments, from_contig_to_residues
 
 
@@ -25,13 +24,19 @@ class ProteinDJDesignWorkflow(DesignWorkflow):
         rfd_models: str = os.path.join(config.reference_files_dir, "rfdiffusion_models")
         af2_models: str = os.path.join(config.reference_files_dir, "alphafold_models")
         boltz_models: str = os.path.join(config.reference_files_dir, "boltz_models")
-        # TODO job resources should be somehow standardized and passed by scheduler
+        #
+        # TODO job resource params should be passed by scheduler,
+        #  perhaps using a customizable -params-file YAML file
+        #  which could be passed as submission_arg pipeline_params: pipelines/ containing proteindj.yml
+        #
         # Number of available GPU machines to be used in parallel - determines batch size
         gpus: int = 1
         cpus: int = 4
         cpus_per_gpu: int = 4
         memory_gpu: str = "14GB"
         memory_cpu: str = "14GB"
+        gpu_queue: str = "gpu-small"
+        gpu_model: str = "a10g"
 
         def validate(self):
             if not self.rfd_input_pdb:
@@ -46,9 +51,14 @@ class ProteinDJDesignWorkflow(DesignWorkflow):
     params: Params = field(default_factory=Params, metadata=dict(tool_name="ProteinDJ"))
     preview_job_id: str = None
 
-    def submit(self, scheduler: Scheduler, pipeline_name: str = None) -> str:
-        from ovo_proteindj.logic import submit_workflow
-        return submit_workflow(self, scheduler, pipeline_name=pipeline_name)
+    def get_pipeline_name(self) -> str:
+        return "https://github.com/PapenfussLab/proteindj@v1.0.0"
+        
+    def prepare_params(self, workdir: str) -> dict:
+        from ovo import storage
+        params = self.params.to_dict()
+        params["rfd_input_pdb"] = storage.prepare_workflow_input(params["rfd_input_pdb"], workdir)
+        return params
 
     def process_results(self, job: "DesignJob", callback: Callable = None):
         """Process results of a successful workflow - download files from workdir, save DesignJob, Pool and Designs"""

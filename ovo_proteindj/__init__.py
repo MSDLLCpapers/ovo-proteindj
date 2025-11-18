@@ -5,7 +5,8 @@ plugin = dict(
             dict(page="ovo_proteindj.pages.monomer_motifscaff", title="🏗 ProteinDJ Scaffold Design"),
         ],
     },
+    descriptors="ovo_proteindj.descriptors_proteindj",
     modules = [
-        "ovo_proteindj.models"
+        "ovo_proteindj.models_proteindj"
     ]
 )
