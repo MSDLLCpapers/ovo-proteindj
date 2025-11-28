@@ -3,7 +3,8 @@ import re
 from dataclasses import dataclass, field
 from typing import Callable, Literal
 
-from ovo import config, DesignWorkflow, WorkflowTypes, WorkflowParams
+from ovo import config
+from ovo.core.database import DesignWorkflow, WorkflowTypes, WorkflowParams, Base
 from ovo.core.utils.residue_selection import from_segments_to_hotspots, from_hotspots_to_segments, from_contig_to_residues
 
 
@@ -21,14 +22,13 @@ class ProteinDJDesignWorkflow(DesignWorkflow):
         rfd_num_designs: int = 10
         seqs_per_design: int = 8
         rfd_extra_config: str = ""
+        #
+        # TODO job resource params should be passed by scheduler,
+        #  which could be passed as submission_arg pipeline_params: pipelines/ containing proteindj.config
+        #
         rfd_models: str = os.path.join(config.reference_files_dir, "rfdiffusion_models")
         af2_models: str = os.path.join(config.reference_files_dir, "alphafold_models")
         boltz_models: str = os.path.join(config.reference_files_dir, "boltz_models")
-        #
-        # TODO job resource params should be passed by scheduler,
-        #  perhaps using a customizable -params-file YAML file
-        #  which could be passed as submission_arg pipeline_params: pipelines/ containing proteindj.yml
-        #
         # Number of available GPU machines to be used in parallel - determines batch size
         gpus: int = 1
         cpus: int = 4
@@ -60,10 +60,10 @@ class ProteinDJDesignWorkflow(DesignWorkflow):
         params["rfd_input_pdb"] = storage.prepare_workflow_input(params["rfd_input_pdb"], workdir)
         return params
 
-    def process_results(self, job: "DesignJob", callback: Callable = None):
+    def process_results(self, job: "DesignJob", callback: Callable = None) -> list[Base]:
         """Process results of a successful workflow - download files from workdir, save DesignJob, Pool and Designs"""
         from ovo_proteindj.logic import process_workflow_results
-        process_workflow_results(job=job, callback=callback)
+        return process_workflow_results(job=job, callback=callback)
 
     def get_input_name(self) -> str | None:
         return os.path.basename(self.params.rfd_input_pdb.rsplit(".", 1)[0]) if self.params.rfd_input_pdb else None

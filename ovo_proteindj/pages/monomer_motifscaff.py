@@ -28,9 +28,6 @@ def intro_step():
     # Initialize the workflow object in session state
     initialize_workflow(__file__, ProteinDJMonomerMotifScaffDesignWorkflow.name)
 
-    if not config.props.pyrosetta_license:
-        return st.error("This workflow requires a PyRosetta license which is not enabled in this OVO instance. Please contact the administrator.")
-
     with st.container(width=850):
         st.markdown(
             f"""
@@ -251,6 +248,10 @@ def check_contig_parsed(contig: str | None, verbose: bool = False) -> bool:
 
 if __name__ == "__main__":
     initialize_page(page_title="ProteinDJ Scaffold design")
+
+    if not config.props.pyrosetta_license:
+        st.error("This workflow requires a PyRosetta license which is not enabled in this OVO instance. Please contact the administrator.")
+        st.stop()
 
     show_prev_next_sections(
         key=__file__,

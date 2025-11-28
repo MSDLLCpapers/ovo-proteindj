@@ -16,7 +16,7 @@ from ovo import (
 )
 from ovo.core.database import descriptors
 
-from ovo.core.database.models import Pool, Round, DesignJob, DesignSpec, DescriptorValue
+from ovo.core.database.models import Pool, Round, DesignJob, DesignSpec, DescriptorValue, Base
 from ovo.core.logic.descriptor_logic import save_descriptor_job_for_design_job, read_descriptor_file_values, \
     generate_descriptor_values_for_design
 from ovo.core.logic.design_logic import set_designs_accepted
@@ -25,7 +25,7 @@ from ovo_proteindj.models_proteindj import ProteinDJDesignWorkflow
 from ovo_proteindj import descriptors_proteindj
 
 
-def process_workflow_results(job: DesignJob, callback: Callable = None):
+def process_workflow_results(job: DesignJob, callback: Callable = None) -> list[Base]:
     pool = db.get(Pool, design_job_id=job.id)
     project_round = db.get(Round, id=pool.round_id)
     scheduler = get_scheduler(job.scheduler_key)
@@ -97,8 +97,8 @@ def process_workflow_results(job: DesignJob, callback: Callable = None):
     )
     for descriptor_value in descriptor_values:
         descriptor_value.descriptor_job_id = descriptor_job.id
-    # Save designs and descriptors atomically in one commit
-    db.save_all(designs + descriptor_values)
+
+    return designs + descriptor_values
 
 
 def process_proteindj_design(
