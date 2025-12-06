@@ -62,7 +62,7 @@ def input_step():
         if new_pdb_input := pdb_input_component(workflow.get_input_name()):
             input_name, pdb_input_bytes = new_pdb_input
 
-            workflow.params.rfd_input_pdb = storage.store_file_str(
+            workflow.params.input_pdb = storage.store_file_str(
                 pdb_input_bytes.decode(),
                 f"project/{st.session_state.project.id}/inputs/{get_hashed_path_for_bytes(pdb_input_bytes)}/{input_name}.pdb",
                 overwrite=False,
@@ -70,7 +70,7 @@ def input_step():
             if workflow.get_hotspots() or workflow.get_target_contig():
                 st.warning("Structure was changed, clearing hotspots and trimming region")
                 workflow.params.rfd_contigs = "[]"
-                workflow.params.rfd_hotspots = "[]"
+                workflow.set_hotspots(None)
 
     with right:
         history_dropdown_component(__file__, workflow_name=ProteinDJBinderDeNovoDesignWorkflow.name)
@@ -83,7 +83,7 @@ def input_step():
 
     molstar_custom_component(
         structures=[
-            StructureVisualization(pdb=storage.read_file_str(workflow.params.rfd_input_pdb), color="chain-id")
+            StructureVisualization(pdb=storage.read_file_str(workflow.params.input_pdb), color="chain-id")
         ],
         key="input_structure",
         width=700,
@@ -337,10 +337,10 @@ def settings_step():
         key="rfd_contigs"
     ).strip("[]") + "]"
 
-    workflow.params.rfd_num_designs = st.number_input(
+    workflow.params.num_designs = st.number_input(
         f"Number of RFdiffusion backbone designs",
-        value=workflow.params.rfd_num_designs,
-        key="rfd_num_designs"
+        value=workflow.params.num_designs,
+        key="num_designs"
     )
 
     workflow.params.seqs_per_design = st.number_input(

@@ -20,6 +20,7 @@ from ovo.app.pages.rfdiffusion.binder_diversification import initialize_workflow
 from ovo.app.utils.page_init import initialize_page
 from ovo.core.logic.design_logic_rfdiffusion import submit_rfdiffusion_preview
 from ovo.core.utils.formatting import get_hashed_path_for_bytes
+
 from ovo_proteindj.models_proteindj import ProteinDJMonomerMotifScaffDesignWorkflow
 
 
@@ -52,6 +53,8 @@ TODO readme.
         )
 
 
+
+
 @st.fragment
 def input_step():
     workflow: ProteinDJMonomerMotifScaffDesignWorkflow = st.session_state.workflows[__file__]
@@ -62,7 +65,7 @@ def input_step():
         if new_pdb_input := pdb_input_component(workflow.get_input_name()):
             input_name, pdb_input_bytes = new_pdb_input
 
-            workflow.params.rfd_input_pdb = storage.store_file_str(
+            workflow.params.input_pdb = storage.store_file_str(
                 pdb_input_bytes.decode(),
                 f"project/{st.session_state.project.id}/inputs/{get_hashed_path_for_bytes(pdb_input_bytes)}/{input_name}.pdb",
                 overwrite=False,

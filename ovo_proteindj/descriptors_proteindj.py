@@ -40,34 +40,32 @@ PROTEINDJ_AF2_STRUCTURE_PATH = StructureFileDescriptor(
     structure_type="prediction",
 )
 
-# RFdiffusion
-
-RFD_HELICES = NumericGlobalDescriptor(
+FOLD_HELICES = NumericGlobalDescriptor(
     name="Number of helices",
     description="Number of alpha-helices in the RFdiffusion-generated fold.",
     tool="RFdiffusion",
-    key="proteindj|rfd|rfd_helices",
+    key="proteindj|fold|fold_helices",
 )
 
-RFD_STRANDS = NumericGlobalDescriptor(
+FOLD_STRANDS = NumericGlobalDescriptor(
     name="Number of strands",
     description="Number of beta-strands in the RFdiffusion-generated fold.",
     tool="RFdiffusion",
-    key="proteindj|rfd|rfd_strands",
+    key="proteindj|fold|fold_strands",
 )
 
-RFD_TOTAL_SS = NumericGlobalDescriptor(
+FOLD_TOTAL_SS = NumericGlobalDescriptor(
     name="Number of secondary structures",
     description="Total secondary structures (helices + strands).",
     tool="RFdiffusion",
-    key="proteindj|rfd|rfd_total_ss",
+    key="proteindj|fold|fold_total_ss",
 )
 
-RFD_ROG = NumericGlobalDescriptor(
+FOLD_ROG = NumericGlobalDescriptor(
     name="RFdiffusion radius of gyration",
     description="Radius of gyration for RFdiffusion-generated fold.",
     tool="RFdiffusion",
-    key="proteindj|rfd|rfd_RoG",
+    key="proteindj|fold|fold_RoG",
 )
 
 RFD_TIME = NumericGlobalDescriptor(

@@ -7,44 +7,52 @@ from ovo import config
 from ovo.core.database import DesignWorkflow, WorkflowTypes, WorkflowParams, Base
 from ovo.core.utils.residue_selection import from_segments_to_hotspots, from_hotspots_to_segments, from_contig_to_residues
 
+plugin_config = config.plugins.get(__package__, {})
+default_params = plugin_config.get("default_params", {})
 
+@WorkflowTypes.register("ProteinDJ")
 @dataclass
 class ProteinDJDesignWorkflow(DesignWorkflow):
 
     @dataclass
     class Params(WorkflowParams):
-        rfd_input_pdb: str = None
+        input_pdb: str = None
         rfd_contigs: str = "[]"
-        rfd_mode: str = None
+        design_mode: str = None
         seq_method: str = "mpnn"
         pred_method: str = "af2"
         out_dir: str = "output"
-        rfd_num_designs: int = 10
+        num_designs: int = 10
         seqs_per_design: int = 8
         rfd_extra_config: str = ""
-        #
-        # TODO job resource params should be passed by scheduler,
-        #  which could be passed as submission_arg pipeline_params: pipelines/ containing proteindj.config
-        #
-        rfd_models: str = os.path.join(config.reference_files_dir, "rfdiffusion_models")
-        af2_models: str = os.path.join(config.reference_files_dir, "alphafold_models")
-        boltz_models: str = os.path.join(config.reference_files_dir, "boltz_models")
         # Number of available GPU machines to be used in parallel - determines batch size
         gpus: int = 1
-        cpus: int = 4
-        cpus_per_gpu: int = 4
-        memory_gpu: str = "14GB"
-        memory_cpu: str = "14GB"
-        gpu_queue: str = "gpu-small"
-        gpu_model: str = "a10g"
+        # Parameters recommended to be set through ovo config
+        rfd_models: str = default_params.get("rfd_models").format(config=config)
+        af2_models: str = default_params.get("af2_models").format(config=config)
+        boltz_models: str = default_params.get("boltz_models").format(config=config)
+        cpus: int = default_params.get("cpus")
+        cpus_per_gpu: int = default_params.get("cpus_per_gpu")
+        memory_gpu: str = default_params.get("memory_gpu")
+        memory_cpu: str = default_params.get("memory_cpu")
+        gpu_queue: str = default_params.get("gpu_queue")
+        gpu_model: str = default_params.get("gpu_model")
+
+        # FIXME !!!
+        # FIXME remove this - required in schema but should be null by default
+        # FIXME !!!
+        design_length: str = "123-456"
+        rfd_partial_diffusion_timesteps: int = 20
+        rfd_scaffold_dir: str = "UNUSED"
+        # FIXME !!!
 
         def validate(self):
-            if not self.rfd_input_pdb:
-                raise ValueError("rfd_input_pdb is required")
+            if not self.input_pdb:
+                raise ValueError("input_pdb is required")
             if not self.rfd_contigs or self.rfd_contigs == "[]":
                 raise ValueError("rfd_contigs is required and cannot be empty")
-            if self.rfd_num_designs is None or self.rfd_num_designs < 1:
-                raise ValueError("rfd_num_designs must be a positive integer")
+            if self.num_designs is None or self.num_designs < 1:
+                raise ValueError("num_designs must be a positive integer")
             if self.seqs_per_design is None or self.seqs_per_design < 1:
                 raise ValueError("seqs_per_design must be a positive integer")
 
@@ -52,12 +60,12 @@ class ProteinDJDesignWorkflow(DesignWorkflow):
     preview_job_id: str = None
 
     def get_pipeline_name(self) -> str:
-        return "https://github.com/PapenfussLab/proteindj@v1.0.0"
-        
+        return "https://github.com/PapenfussLab/proteindj@main"
+
     def prepare_params(self, workdir: str) -> dict:
         from ovo import storage
         params = self.params.to_dict()
-        params["rfd_input_pdb"] = storage.prepare_workflow_input(params["rfd_input_pdb"], workdir)
+        params["input_pdb"] = storage.prepare_workflow_input(params["input_pdb"], workdir)
         return params
 
     def process_results(self, job: "DesignJob", callback: Callable = None) -> list[Base]:
@@ -66,10 +74,10 @@ class ProteinDJDesignWorkflow(DesignWorkflow):
         return process_workflow_results(job=job, callback=callback)
 
     def get_input_name(self) -> str | None:
-        return os.path.basename(self.params.rfd_input_pdb.rsplit(".", 1)[0]) if self.params.rfd_input_pdb else None
+        return os.path.basename(self.params.input_pdb.rsplit(".", 1)[0]) if self.params.input_pdb else None
 
     def get_input_pdb_path(self) -> str | None:
-        return self.params.rfd_input_pdb
+        return self.params.input_pdb
 
     def get_selected_segments(self) -> list[str] | None:
         raise NotImplementedError()
@@ -98,7 +106,7 @@ class ProteinDJMonomerMotifScaffDesignWorkflow(ProteinDJDesignWorkflow):
 
     @dataclass
     class Params(ProteinDJDesignWorkflow.Params):
-        rfd_mode: str = "monomer_motifscaff"
+        design_mode: str = "monomer_motifscaff"
         seq_method: str = "fampnn"
 
     params: Params = field(default_factory=Params, metadata=dict(tool_name="ProteinDJ"))
@@ -133,12 +141,9 @@ class ProteinDJBinderDeNovoDesignWorkflow(ProteinDJDesignWorkflow):
 
     @dataclass
     class Params(ProteinDJDesignWorkflow.Params):
-        rfd_hotspots: str = "[]"
-        rfd_mode: str = "binder_denovo"
+        hotspot_residues: str = None
+        design_mode: str = "binder_denovo"
 
-        def validate(self):
-            if not self.rfd_hotspots:
-                raise ValueError("rfd_hotspots is required")
 
     params: Params = field(default_factory=Params, metadata=dict(tool_name="ProteinDJ"))
 
@@ -146,18 +151,12 @@ class ProteinDJBinderDeNovoDesignWorkflow(ProteinDJDesignWorkflow):
 
     # TODO adjust this for scaffold vs binder
     def get_selected_segments(self) -> list[str] | None:
-        # Convert from segments to hotspots
-        if self.params.rfd_hotspots:
-            assert self.params.rfd_hotspots.startswith("[") and self.params.rfd_hotspots.endswith("]"), \
-                f"Unexpected format for rfd_hotspots, expected brackets [A123,A124], got: {self.params.rfd_hotspots}"
-            residues = self.params.rfd_hotspots[1:-1]
-            return from_hotspots_to_segments(residues)
-        return []
+        return from_hotspots_to_segments(self.params.hotspot_residues)
 
     def set_selected_segments(self, segments: list[str]) -> None:
         # Convert from segments to hotspots
         residues = from_segments_to_hotspots(segments)
-        self.params.rfd_hotspots = f"[{residues}]" if residues else "[]"
+        self.set_hotspots(residues)
 
     def get_target_chain(self) -> str | None:
         if not self.params.rfd_contigs or self.params.rfd_contigs == "[]":
@@ -214,7 +213,7 @@ class ProteinDJBinderDeNovoDesignWorkflow(ProteinDJDesignWorkflow):
         self.params.rfd_contigs = binder_contig + "/0 " + target_contig
 
     def get_hotspots(self) -> str | None:
-        return self.params.rfd_hotspots.strip("[]") if self.params.rfd_hotspots else ""
+        return self.params.hotspot_residues
 
-    def set_hotspots(self, hotspots: str):
-        self.params.rfd_hotspots = f"[{hotspots}]" if hotspots else "[]"
+    def set_hotspots(self, hotspots: str | None):
+        self.params.hotspot_residues = hotspots
