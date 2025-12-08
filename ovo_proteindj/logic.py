@@ -1,3 +1,4 @@
+import glob
 import json
 import os
 import pickle
@@ -18,7 +19,7 @@ from ovo import (
 )
 from ovo.core.database import descriptors
 
-from ovo.core.database.models import Pool, Round, DesignJob, DesignSpec, DescriptorValue, Base
+from ovo.core.database.models import Pool, Round, DesignJob, DesignSpec, DescriptorValue, Base, WorkflowTypes
 from ovo.core.logic.descriptor_logic import save_descriptor_job_for_design_job, read_descriptor_file_values, \
     generate_descriptor_values_for_design
 from ovo.core.logic.design_logic import set_designs_accepted
@@ -44,7 +45,7 @@ def process_workflow_results(job: DesignJob, callback: Callable = None) -> list[
     )
 
 
-def import_workflow_results(source_dir: str, round_id: str, pool_name: str, pool_description: str = ""):
+def import_workflow_results(design_mode: str, source_dir: str, round_id: str, pool_name: str, pool_description: str = ""):
     """Import ProteinDJ workflow results from a local directory into a given project round.
 
     Saves Pool, DesignJob, Designs and DescriptorValues into the database.
@@ -52,7 +53,10 @@ def import_workflow_results(source_dir: str, round_id: str, pool_name: str, pool
     source_dir = os.path.abspath(source_dir)
     assert os.path.exists(source_dir), "Source directory does not exist: {}".format(source_dir)
     assert os.path.isdir(source_dir), "Source directory is not a directory: {}".format(source_dir)
+    if db.count(Pool, round_id=round_id, name=pool_name):
+        raise ValueError(f"Pool with name '{pool_name}' already exists in round {round_id}")
     # Create pool and dummy job
+    project_round = db.get(Round, id=round_id)
     pool = Pool(
         id=Pool.generate_id(),
         round_id=round_id,
@@ -60,13 +64,30 @@ def import_workflow_results(source_dir: str, round_id: str, pool_name: str, pool
         description=pool_description,
         author=get_username()
     )
+    WorkflowSubclass = WorkflowTypes.get(f"ProteinDJ {design_mode}")
+    input_filenames = sorted(glob.glob(os.path.join(source_dir, "inputs/*.pdb")))
+    if not input_filenames:
+        raise ValueError(f"No input PDB files found in {os.path.join(source_dir, 'inputs')}")
+    if len(input_filenames) > 1:
+        # TODO can we have multiple input PDBs?
+        raise ValueError(f"Multiple input PDB files found in {os.path.join(source_dir, 'inputs')}, expected only one, got: {input_filenames}")
+
+    input_filename = os.path.basename(input_filenames[0])
+
     job = DesignJob(
         scheduler_key=Scheduler.IMPORTED_SCHEDULER_KEY,
         job_id=Scheduler.IMPORTED_JOB_ID,
-        workflow=models_proteindj.ProteinDJDesignWorkflow(
-            params=models_proteindj.ProteinDJDesignWorkflow.Params.from_dict({
+        workflow=WorkflowSubclass(
+            params={
+                "input_pdb": storage.store_input(
+                    project_id=project_round.project_id,
+                    file_path=os.path.join(source_dir, "inputs", input_filename),
+                ),
                 # TODO read params from source_dir
-            })
+            },
+            # TODO read thresholds from source_dir, or get them from the user
+            #  or modify processing logic to ensure that acceptance is based on membership in best_designs.csv
+            acceptance_thresholds={}
         ),
         job_result=True,
         author=get_username(),
@@ -97,7 +118,6 @@ def import_workflow_results(source_dir: str, round_id: str, pool_name: str, pool
     # Process the output directory
     objects = [pool, job] + process_proteindj_output_dir(
         job=job,
-        project_round=project_round,
         pool=pool,
         source_dir=source_dir,
         fold_dir=fold_dir,
@@ -105,6 +125,9 @@ def import_workflow_results(source_dir: str, round_id: str, pool_name: str, pool
         pred_dir=pred_dir,
     )
     db.save_all(objects)
+    # Update design_job_id in pool
+    pool.design_job_id = job.id
+    db.save(pool)
 
 
 def process_proteindj_output_dir(
@@ -164,7 +187,6 @@ def process_proteindj_output_dir(
                         text=f"Downloading design {new_design.id}",
                     )
 
-    # TODO add acceptance thresholds to models
     # Update design.accepted fields based on descriptor values and thresholds
     set_designs_accepted(designs, descriptor_values, job.workflow.acceptance_thresholds)
 
@@ -204,10 +226,6 @@ def process_proteindj_design(
     fold_id = f"ovo_{pool_id}{fold_suffix}"
     design_id = fold_id + f"_seq{sequence_id}"
 
-    rfd_json = json.loads(storage.read_file_str(
-        os.path.join(tmpdir, f"{fold_dir}_results/{fold_filename}.json")
-    ))
-
     # create Design object
     design = Design(
         id=design_id,
@@ -220,16 +238,11 @@ def process_proteindj_design(
         overwrite=False,
     )
 
-    # FIXME the json is actually slightly different from the TRB format (config -> rfd_config etc)
-    #  Just store the json instead and use custom logic for it
-    rfdiffusion_backbone_trb_path = storage.store_file_bytes(
-        file_bytes=pickle.dumps(rfd_json),
-        storage_rel_path=f"{destination_dir}/rfdiffusion/{fold_id}_backbone.trb",
+    fold_json_path = storage.store_file_path(
+        source_abs_path=os.path.join(tmpdir, f"{fold_dir}_results/{fold_filename}.json"),
+        storage_rel_path=f"{destination_dir}/rfdiffusion/{fold_id}.json",
         overwrite=False,
     )
-    #
-    # TODO handle FAMPNN prediction
-    #
     sequence_design_descriptor = descriptors_proteindj.PROTEINDJ_PROTEIN_MPNN_STRUCTURE_PATH
     sequence_design_pdb_path = storage.store_file_path(
         source_abs_path=f"{tmpdir}/{seq_dir}_results/{fold_filename}_seq_{idx_sequence}.pdb",
@@ -237,7 +250,7 @@ def process_proteindj_design(
         overwrite=False,
     )
     #
-    # TODO handle Boltz prediction
+    # TODO handle Boltz prediction here and in generate_descriptor_values_for_design below
     #
     structure_prediction_descriptor = descriptors_proteindj.PROTEINDJ_AF2_STRUCTURE_PATH
     structure_prediction_pdb_path = storage.store_file_path(
@@ -257,8 +270,8 @@ def process_proteindj_design(
             **shared_args,
         ),
         DescriptorValue(
-            descriptor_key=descriptors_proteindj.RFDIFFUSION_TRB_PATH.key,
-            value=rfdiffusion_backbone_trb_path,
+            descriptor_key=descriptors_proteindj.FOLD_JSON_PATH.key,
+            value=fold_json_path,
             **shared_args,
         ),
         DescriptorValue(
@@ -278,7 +291,7 @@ def process_proteindj_design(
     design.spec = DesignSpec.from_pdb_str(
         pdb_data=storage.read_file_str(design.structure_path), chains=chain_ids
     )
-    # TODO populate each spec.chains[...].contig from RFD json or row.rfd_sampled_mask,
+    # TODO populate each spec.chains[...].contig from RFD json or csv row,
     #  make sure they are in the correct order as the chains in the PDB!
 
     # Sanity check - make sure sequences in CSV match those in PDB
@@ -297,9 +310,11 @@ def process_proteindj_design(
             table_ids=design_id,
             descriptor_job_id=None, # will be set later
             descriptor_tables={
+                "proteindj|fold": df,
                 "proteindj|rfd": df,
                 "proteindj|mpnn": df,
                 "proteindj|af2": df,
+                # TODO include boltz metrics
                 #"proteindj|boltz": df,
                 "proteindj|pr": df,
                 "proteindj|seq": df,

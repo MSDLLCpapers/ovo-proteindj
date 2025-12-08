@@ -65,10 +65,12 @@ def input_step():
         if new_pdb_input := pdb_input_component(workflow.get_input_name()):
             input_name, pdb_input_bytes = new_pdb_input
 
-            workflow.params.input_pdb = storage.store_file_str(
-                pdb_input_bytes.decode(),
-                f"project/{st.session_state.project.id}/inputs/{get_hashed_path_for_bytes(pdb_input_bytes)}/{input_name}.pdb",
-                overwrite=False,
+            workflow.set_input_pdb_path(
+                storage.store_input(
+                    project_id=st.session_state.project.id,
+                    filename=f"{input_name}.pdb",
+                    file_bytes=pdb_input_bytes,
+                )
             )
             if workflow.get_contig():
                 st.warning("Structure was changed, clearing contig")
@@ -219,6 +221,20 @@ def settings_step():
 
     if check_contig_parsed(contig):
         workflow.set_contig(contig)
+
+    workflow.params["num_designs"] = st.number_input(
+        f"Number of RFdiffusion backbone designs",
+        value=workflow.params.get("num_designs", 10),
+        key="num_designs"
+    )
+
+    # TODO when large number of designs is requested, warn if no hard filters are set in advanced settings
+
+    workflow.params["seqs_per_design"] = st.number_input(
+        f"Number of sequences per backbone",
+        value=workflow.params.get("seqs_per_design", 8),
+        key="seqs_per_design"
+    )
 
     # TODO more advanced settings
 

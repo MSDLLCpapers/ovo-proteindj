@@ -6,7 +6,7 @@ from ovo.app.components.history_components import history_dropdown_component
 from ovo.app.components.input_components import pdb_input_component, sequence_selection_fragment
 from ovo.app.components.molstar_custom_component import molstar_custom_component, StructureVisualization
 from ovo.app.components.navigation import show_prev_next_sections
-from ovo.app.components.preview_components import parameters_binder_preview_component, visualize_rfdiffusion_preview
+from ovo.app.components.preview_components import visualize_rfdiffusion_preview
 from ovo.app.components.scheduler_components import wait_with_statusbar
 from ovo.app.components.submission_components import (
     pool_submission_inputs,
@@ -62,14 +62,16 @@ def input_step():
         if new_pdb_input := pdb_input_component(workflow.get_input_name()):
             input_name, pdb_input_bytes = new_pdb_input
 
-            workflow.params.input_pdb = storage.store_file_str(
-                pdb_input_bytes.decode(),
-                f"project/{st.session_state.project.id}/inputs/{get_hashed_path_for_bytes(pdb_input_bytes)}/{input_name}.pdb",
-                overwrite=False,
+            workflow.set_input_pdb_path(
+                storage.store_input(
+                    project_id=st.session_state.project.id,
+                    filename=f"{input_name}.pdb",
+                    file_bytes=pdb_input_bytes,
+                )
             )
             if workflow.get_hotspots() or workflow.get_target_contig():
                 st.warning("Structure was changed, clearing hotspots and trimming region")
-                workflow.params.rfd_contigs = "[]"
+                workflow.set_contig("")
                 workflow.set_hotspots(None)
 
     with right:
@@ -83,7 +85,7 @@ def input_step():
 
     molstar_custom_component(
         structures=[
-            StructureVisualization(pdb=storage.read_file_str(workflow.params.input_pdb), color="chain-id")
+            StructureVisualization(pdb=storage.read_file_str(workflow.get_input_pdb_path()), color="chain-id")
         ],
         key="input_structure",
         width=700,
@@ -101,7 +103,7 @@ def hotspots_step():
         st.error("Please provide an input structure in the input structure step.")
         return
 
-    sequence_selection_fragment(__file__, workflow.get_input_name(), color="hydrophobicity")
+    sequence_selection_fragment(__file__, workflow.get_input_name(), color="hydrophobicity", write_segments=False)
 
 
 
@@ -240,7 +242,6 @@ def trim_step():
         trimmed_structure_visualizer(workflow, pdb_input_string)
 
 
-
 def parameters_binder_preview_component(workflow):
     if not workflow.get_target_chain():
         st.error("Please provide a target chain in the previous step.")
@@ -331,29 +332,31 @@ def settings_step():
 
     st.session_state.current_pool_settings = pool_submission_inputs(__file__)
 
-    workflow.params.rfd_contigs = "[" + st.text_input(
+    workflow.set_contig(st.text_input(
         f"RFdiffusion contigs",
-        value=workflow.params.rfd_contigs.strip("[]"),
+        value=workflow.get_contig(),
         key="rfd_contigs"
-    ).strip("[]") + "]"
+    ))
 
-    workflow.params.num_designs = st.number_input(
+    workflow.params["num_designs"] = st.number_input(
         f"Number of RFdiffusion backbone designs",
-        value=workflow.params.num_designs,
+        value=workflow.params.get("num_designs", 10),
         key="num_designs"
     )
 
-    workflow.params.seqs_per_design = st.number_input(
+    workflow.params["seqs_per_design"] = st.number_input(
         f"Number of sequences per backbone",
-        value=workflow.params.seqs_per_design,
+        value=workflow.params.get("seqs_per_design", 8),
         key="seqs_per_design"
     )
+
 
 @st.fragment
 def review_step():
     st.subheader("Review settings")
 
     review_workflow_submission(__file__)
+
 
 if __name__ == '__main__':
     initialize_page(page_title="ProteinDJ Binder Design")

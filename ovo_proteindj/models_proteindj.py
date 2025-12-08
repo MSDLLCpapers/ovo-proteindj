@@ -1,70 +1,60 @@
 import os
 import re
 from dataclasses import dataclass, field
-from typing import Callable, Literal
+from typing import Callable, Literal, TypedDict
 
-from ovo import config
-from ovo.core.database import DesignWorkflow, WorkflowTypes, WorkflowParams, Base
+from ovo import config, storage
+from ovo.core.database import DesignWorkflow, WorkflowTypes, WorkflowParams, Base, DesignJob, Threshold
 from ovo.core.utils.residue_selection import from_segments_to_hotspots, from_hotspots_to_segments, from_contig_to_residues
 
-plugin_config = config.plugins.get(__package__, {})
-default_params = plugin_config.get("default_params", {})
+from ovo_proteindj import descriptors_proteindj
 
-@WorkflowTypes.register("ProteinDJ")
+# Pipeline version
+# tag or commit ID from https://github.com/PapenfussLab/proteindj
+PIPELINE_VERSION = "5db7c4e6b9507ebfdcd20090ebb3eef544abe27c"
+
+# Get default pipeline params from OVO config
+plugin_config = config.plugins.get(__package__, {})
+default_params = {
+    key: value.format(config=config) if isinstance(value, str) else value
+    for key, value in plugin_config.get("default_params", {}).items()
+}
+
+class ProteinDJParamsType(TypedDict):
+    """Typed dictionary for ProteinDJ workflow parameters
+
+    Used only for type hinting purposes - actual params are stored as a dict
+    """
+    input_pdb: str
+    design_mode: str
+    rfd_contigs: str
+    seq_method: str
+    hotspot_residues: str | None
+    rfd_inpaint_seq: str | None
+    # add other parameters as needed
+
+
 @dataclass
 class ProteinDJDesignWorkflow(DesignWorkflow):
 
-    @dataclass
-    class Params(WorkflowParams):
-        input_pdb: str = None
-        rfd_contigs: str = "[]"
-        design_mode: str = None
-        seq_method: str = "mpnn"
-        pred_method: str = "af2"
-        out_dir: str = "output"
-        num_designs: int = 10
-        seqs_per_design: int = 8
-        rfd_extra_config: str = ""
-        # Number of available GPU machines to be used in parallel - determines batch size
-        gpus: int = 1
-        # Parameters recommended to be set through ovo config
-        rfd_models: str = default_params.get("rfd_models").format(config=config)
-        af2_models: str = default_params.get("af2_models").format(config=config)
-        boltz_models: str = default_params.get("boltz_models").format(config=config)
-        cpus: int = default_params.get("cpus")
-        cpus_per_gpu: int = default_params.get("cpus_per_gpu")
-        memory_gpu: str = default_params.get("memory_gpu")
-        memory_cpu: str = default_params.get("memory_cpu")
-        gpu_queue: str = default_params.get("gpu_queue")
-        gpu_model: str = default_params.get("gpu_model")
+    params: ProteinDJParamsType = field(default_factory=lambda: {
+        **default_params,
+        "out_dir": "output",
+    })
 
-        # FIXME !!!
-        # FIXME remove this - required in schema but should be null by default
-        # FIXME !!!
-        design_length: str = "123-456"
-        rfd_partial_diffusion_timesteps: int = 20
-        rfd_scaffold_dir: str = "UNUSED"
-        # FIXME !!!
-
-        def validate(self):
-            if not self.input_pdb:
-                raise ValueError("input_pdb is required")
-            if not self.rfd_contigs or self.rfd_contigs == "[]":
-                raise ValueError("rfd_contigs is required and cannot be empty")
-            if self.num_designs is None or self.num_designs < 1:
-                raise ValueError("num_designs must be a positive integer")
-            if self.seqs_per_design is None or self.seqs_per_design < 1:
-                raise ValueError("seqs_per_design must be a positive integer")
-
-    params: Params = field(default_factory=Params, metadata=dict(tool_name="ProteinDJ"))
     preview_job_id: str = None
 
     def get_pipeline_name(self) -> str:
-        return "https://github.com/PapenfussLab/proteindj@main"
+        # TODO store pipeline version as a field in the workflow?
+        #  it would be nice to know the version,
+        #  but the problem is that nextflow currently only supports managing one single version of a pipeline at a time
+        #  and also it might not be intuitive to users that we are not using the latest version
+        #  when using the "reuse previous job" dropdown that initializes the workflow with all old fields
+        return f"https://github.com/PapenfussLab/proteindj@{PIPELINE_VERSION}"
 
     def prepare_params(self, workdir: str) -> dict:
-        from ovo import storage
-        params = self.params.to_dict()
+        params = self.params.copy()
+        # TODO do this automatically in ovo design_logic - based on param schema "format" field?
         params["input_pdb"] = storage.prepare_workflow_input(params["input_pdb"], workdir)
         return params
 
@@ -74,23 +64,30 @@ class ProteinDJDesignWorkflow(DesignWorkflow):
         return process_workflow_results(job=job, callback=callback)
 
     def get_input_name(self) -> str | None:
-        return os.path.basename(self.params.input_pdb.rsplit(".", 1)[0]) if self.params.input_pdb else None
+        return os.path.basename(self.params["input_pdb"].rsplit(".", 1)[0]) if self.params.get("input_pdb") else None
 
     def get_input_pdb_path(self) -> str | None:
-        return self.params.input_pdb
+        return self.params.get("input_pdb")
+
+    def set_input_pdb_path(self, pdb_path: str):
+        self.params["input_pdb"] = pdb_path
 
     def get_selected_segments(self) -> list[str] | None:
+        # implemented in subclasses
         raise NotImplementedError()
 
     def set_selected_segments(self, segments: list[str]):
+        # implemented in subclasses
         raise NotImplementedError()
 
     def get_contig(self, contig_index: int = 0) -> list[str] | Literal[""]:
-        contigs = self.params.rfd_contigs.strip("[]").split(",") if self.params.rfd_contigs else []
+        """Get contig string without [] brackets for the given contig index (default 0)"""
+        contigs = self.params["rfd_contigs"].strip("[]").split(",") if self.params.get("rfd_contigs") else []
         return contigs[contig_index] if contigs else ""
 
     def set_contig(self, contig: str):
-        self.params.rfd_contigs = f"[{contig.strip('[]')}]" if contig else "[]"
+        """Set contig string, adding [] brackets if not already present"""
+        self.params["rfd_contigs"] = f"[{contig.strip('[]')}]" if contig else "[]"
 
     def get_cyclic_offset(self) -> bool:
         return False
@@ -100,32 +97,55 @@ class ProteinDJDesignWorkflow(DesignWorkflow):
 
 
 
-@WorkflowTypes.register("ProteinDJ monomer_denovo")
+@WorkflowTypes.register("ProteinDJ monomer_motifscaff")
 @dataclass
 class ProteinDJMonomerMotifScaffDesignWorkflow(ProteinDJDesignWorkflow):
 
-    @dataclass
-    class Params(ProteinDJDesignWorkflow.Params):
-        design_mode: str = "monomer_motifscaff"
-        seq_method: str = "fampnn"
+    params: dict = field(default_factory=lambda: {
+        **default_params,
+        "out_dir": "output",
+        "design_mode": "monomer_motifscaff",
+        "seq_method": "fampnn",
+    })
 
-    params: Params = field(default_factory=Params, metadata=dict(tool_name="ProteinDJ"))
+    # acceptance threshold values (descriptor key -> interval (min, max, enabled))
+    acceptance_thresholds: dict[str, Threshold] = field(
+        default_factory=lambda: {
+            descriptors_proteindj.AF2_PAE_OVERALL.key: Threshold(max_value=5.0),
+            descriptors_proteindj.AF2_RMSD_OVERALL.key: Threshold(max_value=2.0),
+            # TODO implement native motif RMSD calculation
+            # descriptors_proteindj.AF2_RMSD_MOTIF.key: Threshold(max_value=2.0),
+            descriptors_proteindj.AF2_PLDDT_OVERALL.key: Threshold(min_value=80),
+            descriptors_proteindj.FOLD_ROG.key: Threshold(enabled=False),
+        }
+    )
 
-    def get_inpaint_seq(self) -> str | None:
-        # FIXME parse from params.rfd_extra_config
-        raise NotImplementedError()
+    @classmethod
+    def visualize_single_design_structures(cls, design_id: str):
+        """Visualize single design structures in Streamlit"""
+        from ovo_proteindj.components.workflow_visualization_components import visualize_scaffold_design_structure
 
-    def set_inpaint_seq(self):
-        # FIXME add to params.rfd_extra_config
-        raise NotImplementedError()
+        visualize_scaffold_design_structure(design_id)
+
+    @classmethod
+    def visualize_single_design_sequences(self, design_id: str):
+        from ovo_proteindj.components.workflow_visualization_components import visualize_scaffold_design_sequence
+
+        visualize_scaffold_design_sequence(design_id)
+
+    def get_inpaint_seq(self):
+        return self.params.get("rfd_inpaint_seq", "").strip("[]") or None
 
     def get_selected_segments(self, inpainting=False) -> list[str] | None:
         if inpainting:
-            raise NotImplementedError("Inpainting not implemented yet")
+            return self.params["rfd_inpaint_seq"].strip("[]").split("/") if self.params.get("rfd_inpaint_seq") else []
         contig = self.get_contig()
         return [segment for subcontig in contig.split() for segment in subcontig.split("/") if segment and segment[0].isalpha()]
 
-    def set_selected_segments(self, segments: list[str]):
+    def set_selected_segments(self, segments: list[str], inpainting=False) -> None:
+        if inpainting:
+            self.params["rfd_inpaint_seq"] = "[" + "/".join(segments) + "]" if segments else None
+            return
         # TODO preserve generated segments, see ovo logic for re-generating contig
         # contig = self.get_contig()
         # generated_segments = [segment for subcontig in contig.split() for segment in subcontig.split("/") if segment and segment[0].isnumeric()]
@@ -139,19 +159,35 @@ class ProteinDJMonomerMotifScaffDesignWorkflow(ProteinDJDesignWorkflow):
 @dataclass
 class ProteinDJBinderDeNovoDesignWorkflow(ProteinDJDesignWorkflow):
 
-    @dataclass
-    class Params(ProteinDJDesignWorkflow.Params):
-        hotspot_residues: str = None
-        design_mode: str = "binder_denovo"
+    params: dict = field(default_factory=lambda: {
+        **default_params,
+        "out_dir": "output",
+        "design_mode": "binder_denovo",
+        "hotspot_residues": None,
+    })
 
+    acceptance_thresholds: dict[str, Threshold] = field(
+        default_factory=lambda: {
+            descriptors_proteindj.AF2_PAE_INTERACTION.key: Threshold(max_value=10.0),
+            descriptors_proteindj.AF2_RMSD_BINDER_TGTALN.key: Threshold(max_value=2.0),
+            descriptors_proteindj.AF2_RMSD_BINDER_BNDALN.key: Threshold(max_value=1.0),
+            descriptors_proteindj.AF2_PLDDT_BINDER.key: Threshold(min_value=80),
+            descriptors_proteindj.PR_INTERFACE_DELTAG.key: Threshold(max_value=-30.0),
+            descriptors_proteindj.AF2_PAE_BINDER.key: Threshold(max_value=5.0),
+            descriptors_proteindj.FOLD_ROG.key: Threshold(enabled=False),
+        }
+    )
 
-    params: Params = field(default_factory=Params, metadata=dict(tool_name="ProteinDJ"))
+    @classmethod
+    def visualize_single_design_structures(cls, design_id: str):
+        """Visualize single design structures in Streamlit"""
+        from ovo_proteindj.components.workflow_visualization_components import visualize_binder_design_structure
 
-    preview_job_id: str = None
+        visualize_binder_design_structure(design_id)
 
     # TODO adjust this for scaffold vs binder
     def get_selected_segments(self) -> list[str] | None:
-        return from_hotspots_to_segments(self.params.hotspot_residues)
+        return from_hotspots_to_segments(self.params.get("hotspot_residues"))
 
     def set_selected_segments(self, segments: list[str]) -> None:
         # Convert from segments to hotspots
@@ -159,7 +195,7 @@ class ProteinDJBinderDeNovoDesignWorkflow(ProteinDJDesignWorkflow):
         self.set_hotspots(residues)
 
     def get_target_chain(self) -> str | None:
-        if not self.params.rfd_contigs or self.params.rfd_contigs == "[]":
+        if not self.get_contig():
             return None
         target_contig = self.get_target_contig()
         chains = [segment[0] for segment in target_contig.split("/") if segment and segment[0].isalpha()]
@@ -203,17 +239,17 @@ class ProteinDJBinderDeNovoDesignWorkflow(ProteinDJDesignWorkflow):
             f"Expected binder contig to be in format 50-100 or 50, got: {binder_contig}"
         if not binder_contig.endswith("/0"):
             binder_contig += "/0"
-        self.params.rfd_contigs = binder_contig + " " + target_contig
+        self.params["rfd_contigs"] = binder_contig + " " + target_contig
 
     def set_binder_contig(self, binder_contig: str):
         target_contig = self.get_target_contig()
         assert target_contig, "Target contig must be set before setting binder contig"
         if not all(re.fullmatch(r"^\d+(-\d+)?$", segment) for segment in binder_contig.split("/")):
             raise ValueError(f"Expected binder contig to be in format 50-100 or 50, got: {binder_contig}")
-        self.params.rfd_contigs = binder_contig + "/0 " + target_contig
+        self.params["rfd_contigs"] = binder_contig + "/0 " + target_contig
 
     def get_hotspots(self) -> str | None:
-        return self.params.hotspot_residues
+        return self.params.get("hotspot_residues")
 
     def set_hotspots(self, hotspots: str | None):
-        self.params.hotspot_residues = hotspots
+        self.params["hotspot_residues"] = hotspots

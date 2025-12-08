@@ -19,5 +19,8 @@ plugin = "ovo_proteindj:plugin"
 [tool.setuptools]
 include-package-data = true
 
+[tool.setuptools.packages.find]
+include = ["ovo*"]
+
 [tool.setuptools.package-data]
 "*" = ["*"]
