@@ -20,6 +20,7 @@ from ovo.core.utils.formatting import get_hashed_path_for_bytes
 from ovo.core.utils.residue_selection import from_contig_to_residues, from_residues_to_chain_breaks, \
     get_chains_and_contigs, from_residues_to_segments
 
+from ovo_proteindj.components.help_components import proteindj_logo
 from ovo_proteindj.models_proteindj import ProteinDJBinderDeNovoDesignWorkflow
 
 
@@ -29,20 +30,9 @@ def intro_step():
     initialize_workflow(__file__, ProteinDJBinderDeNovoDesignWorkflow.name)
 
     with st.container(width=850):
+        proteindj_logo()
         st.markdown(
             f"""
-            
-```
-██████╗ ██████╗  ██████╗ ████████╗███████╗██╗███╗   ██╗██████╗      ██╗
-██╔══██╗██╔══██╗██╔═══██╗╚══██╔══╝██╔════╝██║████╗  ██║██╔══██╗     ██║
-██████╔╝██████╔╝██║   ██║   ██║   █████╗  ██║██╔██╗ ██║██║  ██║     ██║
-██╔═══╝ ██╔══██╗██║   ██║   ██║   ██╔══╝  ██║██║╚██╗██║██║  ██║██   ██║
-██║     ██║  ██║╚██████╔╝   ██║   ███████╗██║██║ ╚████║██████╔╝╚█████╔╝
-╚═╝     ╚═╝  ╚═╝ ╚═════╝    ╚═╝   ╚══════╝╚═╝╚═╝  ╚═══╝╚═════╝  ╚════╝ 
-                   ProteinDJ Protein Design Pipeline                   
-          Developers: Dylan Silke, Josh Hardy, Julie Iskander       
-               https://github.com/PapenfussLab/proteindj   
-```
 
 This workflow enables designing new peptide and miniprotein binders to your input structure. 
 
@@ -330,7 +320,7 @@ def settings_step():
 
     workflow: ProteinDJBinderDeNovoDesignWorkflow = st.session_state.workflows[__file__]
 
-    st.session_state.current_pool_settings = pool_submission_inputs(__file__)
+    pool_submission_inputs(__file__)
 
     workflow.set_contig(st.text_input(
         f"RFdiffusion contigs",

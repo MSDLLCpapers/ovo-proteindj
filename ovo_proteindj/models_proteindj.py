@@ -1,11 +1,14 @@
 import os
 import re
 from dataclasses import dataclass, field
-from typing import Callable, Literal, TypedDict
+from typing import Callable, Literal, TypedDict, Optional
 
 from ovo import config, storage
-from ovo.core.database import DesignWorkflow, WorkflowTypes, WorkflowParams, Base, DesignJob, Threshold
-from ovo.core.utils.residue_selection import from_segments_to_hotspots, from_hotspots_to_segments, from_contig_to_residues
+from ovo.core.database import DesignWorkflow, WorkflowTypes, WorkflowParams, Base, \
+    DesignJob, Threshold
+from ovo.core.database.models_refolding import RefoldingSupportedDesignWorkflow
+from ovo.core.utils.residue_selection import from_segments_to_hotspots, \
+    from_hotspots_to_segments, from_contig_to_residues
 
 from ovo_proteindj import descriptors_proteindj
 
@@ -95,11 +98,17 @@ class ProteinDJDesignWorkflow(DesignWorkflow):
     def get_hotspots(self) -> str | None:
         return None
 
+    def get_refolding_design_paths(self, design_ids: list[str]) -> dict[str, str]:
+        from ovo import db
+
+        values = db.select_descriptor_values(descriptors_proteindj.PROTEINDJ_PROTEIN_MPNN_STRUCTURE_PATH.key, design_ids=design_ids)
+        return values.dropna().to_dict()
+
 
 
 @WorkflowTypes.register("ProteinDJ monomer_motifscaff")
 @dataclass
-class ProteinDJMonomerMotifScaffDesignWorkflow(ProteinDJDesignWorkflow):
+class ProteinDJMonomerMotifScaffDesignWorkflow(ProteinDJDesignWorkflow, RefoldingSupportedDesignWorkflow):
 
     params: dict = field(default_factory=lambda: {
         **default_params,
@@ -154,10 +163,17 @@ class ProteinDJMonomerMotifScaffDesignWorkflow(ProteinDJDesignWorkflow):
         # else:
         self.set_contig("/".join(segments))
 
+    def get_refolding_design_type(self) -> str:
+        return "scaffold"
+
+    def get_refolding_native_pdb_path(self, contig_index: int) -> str:
+        # In binder design, we compare with fixed input motif from input PDB
+        return self.get_input_pdb_path()
+
 
 @WorkflowTypes.register("ProteinDJ binder_denovo")
 @dataclass
-class ProteinDJBinderDeNovoDesignWorkflow(ProteinDJDesignWorkflow):
+class ProteinDJBinderDeNovoDesignWorkflow(ProteinDJDesignWorkflow, RefoldingSupportedDesignWorkflow):
 
     params: dict = field(default_factory=lambda: {
         **default_params,
@@ -253,3 +269,10 @@ class ProteinDJBinderDeNovoDesignWorkflow(ProteinDJDesignWorkflow):
 
     def set_hotspots(self, hotspots: str | None):
         self.params["hotspot_residues"] = hotspots
+
+    def get_refolding_design_type(self) -> str:
+        return "binder"
+
+    def get_refolding_native_pdb_path(self, contig_index: int) -> Optional[str]:
+        # In binder design, we don't compare with fixed input motif, so return None
+        return None

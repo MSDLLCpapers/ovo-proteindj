@@ -1,7 +1,5 @@
 import glob
-import json
 import os
-import pickle
 import subprocess
 import tempfile
 from concurrent.futures import ThreadPoolExecutor
@@ -87,7 +85,7 @@ def import_workflow_results(design_mode: str, source_dir: str, round_id: str, po
             },
             # TODO read thresholds from source_dir, or get them from the user
             #  or modify processing logic to ensure that acceptance is based on membership in best_designs.csv
-            acceptance_thresholds={}
+            # acceptance_thresholds=...
         ),
         job_result=True,
         author=get_username(),
@@ -128,6 +126,7 @@ def import_workflow_results(design_mode: str, source_dir: str, round_id: str, po
     # Update design_job_id in pool
     pool.design_job_id = job.id
     db.save(pool)
+    return pool
 
 
 def process_proteindj_output_dir(
@@ -285,7 +284,8 @@ def process_proteindj_design(
             **shared_args,
         ),
     ]
-    design.structure_path = sequence_design_pdb_path
+    # Use the prediction PDB as the design structure - it's guaranteed to have valid sidechains
+    design.structure_path = structure_prediction_pdb_path
     # TODO handle multiple chains
     chain_ids = ["A"]
     design.spec = DesignSpec.from_pdb_str(
@@ -304,6 +304,15 @@ def process_proteindj_design(
         f"Unexpected mismatch between sequence in PDB and CSV for design {design.id}: {spec_sequences} != {row.sequence}"
 
     df = pd.DataFrame([row.rename(design_id)])
+
+    # Legacy support for rfd_ prefix instead of fold_
+    df = df.rename(columns={
+        "rfd_helices": "fold_helices",
+        "rfd_strands": "fold_strands",
+        "rfd_total_ss": "fold_total_ss",
+        "rfd_RoG": "fold_RoG",
+    })
+
     descriptor_values.extend(
         generate_descriptor_values_for_design(
             design_id=design_id,

@@ -21,6 +21,7 @@ from ovo.app.utils.page_init import initialize_page
 from ovo.core.logic.design_logic_rfdiffusion import submit_rfdiffusion_preview
 from ovo.core.utils.formatting import get_hashed_path_for_bytes
 
+from ovo_proteindj.components.help_components import proteindj_logo
 from ovo_proteindj.models_proteindj import ProteinDJMonomerMotifScaffDesignWorkflow
 
 
@@ -30,20 +31,9 @@ def intro_step():
     initialize_workflow(__file__, ProteinDJMonomerMotifScaffDesignWorkflow.name)
 
     with st.container(width=850):
+        proteindj_logo()
         st.markdown(
             f"""
-
-```
-██████╗ ██████╗  ██████╗ ████████╗███████╗██╗███╗   ██╗██████╗      ██╗
-██╔══██╗██╔══██╗██╔═══██╗╚══██╔══╝██╔════╝██║████╗  ██║██╔══██╗     ██║
-██████╔╝██████╔╝██║   ██║   ██║   █████╗  ██║██╔██╗ ██║██║  ██║     ██║
-██╔═══╝ ██╔══██╗██║   ██║   ██║   ██╔══╝  ██║██║╚██╗██║██║  ██║██   ██║
-██║     ██║  ██║╚██████╔╝   ██║   ███████╗██║██║ ╚████║██████╔╝╚█████╔╝
-╚═╝     ╚═╝  ╚═╝ ╚═════╝    ╚═╝   ╚══════╝╚═╝╚═╝  ╚═══╝╚═════╝  ╚════╝ 
-                   ProteinDJ Protein Design Pipeline                   
-          Developers: Dylan Silke, Josh Hardy, Julie Iskander       
-               https://github.com/PapenfussLab/proteindj   
-```
 
 This workflow enables designing a scaffold to support segments from an existing input structure. 
 
