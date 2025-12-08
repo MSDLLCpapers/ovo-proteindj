@@ -20,7 +20,7 @@ from ovo.core.utils.formatting import get_hashed_path_for_bytes
 from ovo.core.utils.residue_selection import from_contig_to_residues, from_residues_to_chain_breaks, \
     get_chains_and_contigs, from_residues_to_segments
 
-from ovo_proteindj.components.help_components import proteindj_logo
+from ovo_proteindj.components.help_components import proteindj_intro
 from ovo_proteindj.models_proteindj import ProteinDJBinderDeNovoDesignWorkflow
 
 
@@ -30,7 +30,7 @@ def intro_step():
     initialize_workflow(__file__, ProteinDJBinderDeNovoDesignWorkflow.name)
 
     with st.container(width=850):
-        proteindj_logo()
+        proteindj_intro()
         st.markdown(
             f"""
 

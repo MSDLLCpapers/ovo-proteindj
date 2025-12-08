@@ -6,7 +6,7 @@ from ovo.core.logic.round_logic import get_or_create_project_rounds
 from ovo.app.components.submission_components import pool_submission_inputs, get_pool_inputs
 from ovo.app.utils.page_init import initialize_page
 
-from ovo_proteindj.components.help_components import proteindj_logo
+from ovo_proteindj.components.help_components import proteindj_intro
 from ovo_proteindj.logic import import_workflow_results
 
 if __name__ == "__main__":
@@ -14,7 +14,7 @@ if __name__ == "__main__":
 
     st.title("🪩 ProteinDJ Import")
 
-    proteindj_logo()
+    proteindj_intro()
     st.markdown(
                 f"""
     Import existing ProteinDJ results into OVO.
@@ -47,7 +47,7 @@ if __name__ == "__main__":
         disabled = True
 
     if st.button("Import", type="primary", disabled=disabled, help=help):
-
+        # TODO which temp directory to use here? can we use the default, or something custom
         with tempfile.TemporaryDirectory() as tmpdirname:
             for file in uploaded_files:
                 os.makedirs(os.path.join(tmpdirname, os.path.dirname(file.name)), exist_ok=True)

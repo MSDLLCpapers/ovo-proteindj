@@ -150,10 +150,16 @@ def process_proteindj_output_dir(
     num_fold_designs = all_designs_df.fold_id.max() + 1
     num_sequence_designs = all_designs_df.seq_id.max() + 1
 
+    # TODO we should use a temp directory near our storage to speed up file operations below
     with tempfile.TemporaryDirectory() as tmpdir:
         for dirname in [fold_dir, seq_dir, pred_dir]:
+            # sync the result file (when using S3 storage, this downloads the file, otherwise we just symlink it)
+            storage.sync_file(
+                os.path.join(source_dir, f"run/{dirname}/{dirname}_results.tar.gz"),
+                os.path.join(tmpdir, f"{dirname}_results.tar.gz"),
+                link=True
+            )
             # untar the result files
-            storage.sync_file(os.path.join(source_dir, f"run/{dirname}/{dirname}_results.tar.gz"), tmpdir)
             tar_path = os.path.join(tmpdir, f'{dirname}_results.tar.gz')
             subprocess.run(['tar', '-xzf', tar_path, '-C', tmpdir], check=True)
 
