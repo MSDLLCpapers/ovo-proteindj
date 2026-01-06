@@ -32,13 +32,37 @@ def process_workflow_results(job: DesignJob, callback: Callable = None) -> list[
     assert job.workflow.is_instance(models_proteindj.ProteinDJDesignWorkflow), (
         "This function expects a ProteinDJDesignWorkflow instance, got: {}".format(type(job.workflow).__name__)
     )
+    
+    # Get source directory
+    source_dir = scheduler.get_output_dir(job.job_id)
+    run_dir = os.path.join(source_dir, "run")
+    
+    # Auto-detect or use configured fold directory
+    fold_dir = job.workflow.params.get('fold_method', 'rfd')
+    
+    # Auto-detect or use configured sequence design directory
+    seq_dir = job.workflow.params.get('seq_method')
+    if not seq_dir:
+        for option in ["fampnn", "mpnn"]:
+            if os.path.exists(os.path.join(run_dir, option)):
+                seq_dir = option
+                break
+    
+    # Auto-detect or use configured structure prediction directory
+    pred_dir = job.workflow.params.get('pred_method')
+    if not pred_dir:
+        for option in ["af2", "boltz"]:
+            if os.path.exists(os.path.join(run_dir, option)):
+                pred_dir = option
+                break
+    
     return process_proteindj_output_dir(
         job=job,
         pool=pool,
-        source_dir=scheduler.get_output_dir(job.job_id),
-        fold_dir="rfd",
-        seq_dir=job.workflow.params.seq_method,
-        pred_dir=job.workflow.params.pred_method,
+        source_dir=source_dir,
+        fold_dir=fold_dir,
+        seq_dir=seq_dir,
+        pred_dir=pred_dir,
         callback=callback,
     )
 
