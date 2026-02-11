@@ -372,9 +372,10 @@ def visualize_binder_design_structure(design_id: str):
     # TODO use target spec for this
     # Note this assumes that the target chain is B in the RFdiffusion output PDB,
     # and that the residue numbers are same as in the input PDB
+    target_chain = workflow.get_target_chain()
     hotspot_selections = (
-        [h.replace(workflow.target_chain, "B") for h in workflow.get_hotspots().split(",")]
-        if workflow.get_hotspots() and workflow.target_chain
+        [h.replace(target_chain, "B") for h in workflow.get_hotspots().split(",")]
+        if workflow.get_hotspots() and target_chain
         else None
     )
 

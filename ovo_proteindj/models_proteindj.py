@@ -14,7 +14,7 @@ from ovo_proteindj import descriptors_proteindj
 
 # Pipeline version
 # tag or commit ID from https://github.com/PapenfussLab/proteindj
-PIPELINE_VERSION = "5db7c4e6b9507ebfdcd20090ebb3eef544abe27c"
+PIPELINE_VERSION = "v2.1.1"
 
 # Get default pipeline params from OVO config
 plugin_config = config.plugins.get(__package__, {})
